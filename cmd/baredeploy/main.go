@@ -12,6 +12,7 @@ func main() {
 	}
 
 	root.AddCommand(discoverCmd())
+	root.AddCommand(authorizeCmd())
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
