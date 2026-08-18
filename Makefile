@@ -16,39 +16,39 @@ CGO      := 0
 
 all: build
 
-build:
+build: ## Build the binary
 	@mkdir -p bin
 	CGO_ENABLED=$(CGO) go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/$(BINARY) $(PKG)
 
-run: build
+run: build ## Run the binary
 	./bin/$(BINARY) $(ARGS)
 
-test:
+test: ## Run tests
 	go test ./...
 
-vet:
+vet: ## Run vet
 	go vet ./...
 
-fmt:
+fmt: ## Format the code
 	go fmt ./...
 
-lint: vet
+lint: vet ## Run lint
 	@command -v golangci-lint >/dev/null 2>&1 && golangci-lint run ./... || echo "golangci-lint not installed; skipping"
 
-tidy:
+tidy: ## Run go mod tidy
 	go mod tidy
 
-cover:
+cover: ## Run tests and generate coverage report
 	go test -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
-install:
+install: ## Install the binary
 	CGO_ENABLED=$(CGO) go install $(GOFLAGS) -ldflags "$(LDFLAGS)" $(PKG)
 
-clean:
+clean: ## Clean up build artifacts
 	rm -rf bin coverage.out coverage.html
 
-help:
+help: ## Display this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 
