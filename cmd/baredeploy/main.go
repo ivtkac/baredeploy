@@ -7,7 +7,12 @@ import (
 )
 
 func main() {
-	root := &cobra.Command{Use: "baredeploy"}
+	root := &cobra.Command{Use: "baredeploy",
+		Short: "baredeploy is a tool for deploying bare metal servers",
+	}
+
+	root.AddCommand(discoverCmd())
+
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
