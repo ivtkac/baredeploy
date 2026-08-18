@@ -11,8 +11,41 @@ import (
 	"github.com/ivtkac/baredeploy/internal/discover"
 	lsblk "github.com/ivtkac/baredeploy/internal/exec"
 	"github.com/ivtkac/baredeploy/internal/runner"
+	"github.com/ivtkac/baredeploy/internal/sshclient"
 	"github.com/spf13/cobra"
 )
+
+type remoteFlags struct {
+	host string
+	user string
+	port int
+	key  string
+}
+
+func (rf *remoteFlags) addFlags(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVarP(&rf.host, "host", "H", "", "Remote host (IP or hostname)")
+	cmd.PersistentFlags().StringVarP(&rf.user, "user", "u", "root", "SSH username")
+	cmd.PersistentFlags().IntVarP(&rf.port, "port", "p", 22, "SSH port")
+	cmd.PersistentFlags().StringVar(&rf.key, "key", "", "Path to SSH private key")
+}
+
+func (rf *remoteFlags) executor() (runner.Executor, func(), error) {
+	if rf.host == "" {
+		return &localExecutor{}, func() {}, nil
+	}
+
+	addr := sshclient.Addr(rf.host, rf.port)
+	keyPath, err := sshclient.ResolveKey(rf.key, rf.user, rf.host)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	client, err := sshclient.ConnectByKey(addr, rf.user, keyPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	return client, client.Cleanup, nil
+}
 
 type localExecutor struct{}
 
@@ -21,25 +54,34 @@ func (e *localExecutor) Run(ctx context.Context, name string, args ...string) (r
 }
 
 func discoverCmd() *cobra.Command {
+	var rf remoteFlags
+
 	cmd := &cobra.Command{
 		Use:   "discover",
 		Short: "Discover hardware",
 	}
 
-	cmd.AddCommand(discoverDevicesCmd())
-	cmd.AddCommand(findTargetDisksCmd())
+	rf.addFlags(cmd)
+	cmd.AddCommand(discoverDevicesCmd(&rf))
+	cmd.AddCommand(findTargetDisksCmd(&rf))
 
 	return cmd
 }
 
-func discoverDevicesCmd() *cobra.Command {
+func discoverDevicesCmd(rf *remoteFlags) *cobra.Command {
 	var jsonOutput bool
 
 	cmd := &cobra.Command{
 		Use:   "devices",
 		Short: "List all block devices on the target system",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			out, err := discover.DiscoverDevices(&localExecutor{})
+			ex, cleanup, err := rf.executor()
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+
+			out, err := discover.DiscoverDevices(ex)
 			if err != nil {
 				return err
 			}
@@ -56,7 +98,7 @@ func discoverDevicesCmd() *cobra.Command {
 	return cmd
 }
 
-func findTargetDisksCmd() *cobra.Command {
+func findTargetDisksCmd(rf *remoteFlags) *cobra.Command {
 	var jsonOutput bool
 
 	cmd := &cobra.Command{
@@ -65,7 +107,13 @@ func findTargetDisksCmd() *cobra.Command {
 		Long: `Shows unmounted disks with non-zero size that can be used as
 installation targets.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			targets, err := discover.FindTargetDisks(&localExecutor{})
+			ex, cleanup, err := rf.executor()
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+
+			targets, err := discover.FindTargetDisks(ex)
 			if err != nil {
 				return err
 			}
