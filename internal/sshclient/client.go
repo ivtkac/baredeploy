@@ -1,6 +1,7 @@
-// Package ssh provides a remote command executor over SSH.
+// Package sshclient provides a remote command executor over SSH and
+// helpers for provisioning and locating baredeploy SSH keys.
 //
-// It implements [runner.Executor]
+// Connection implements [runner.Executor].
 package sshclient
 
 import (
@@ -33,9 +34,9 @@ func ConnectByPassword(addr, user, pass string) (*Connection, error) {
 
 // ConnectByKey connects to the remote host using an SSH private key.
 //
-//	addr  — "host:port" or just "host" (port 22 assumed)
-//	user  — SSH username (e.g. "root")
-//	key   — path to the private key file
+//	addr     — "host:port" or just "host" (port 22 assumed)
+//	user     — SSH username (e.g. "root")
+//	keyPath  — path to the private key file
 func ConnectByKey(addr, user, keyPath string) (*Connection, error) {
 	keyBytes, err := os.ReadFile(keyPath)
 	if err != nil {
@@ -59,7 +60,7 @@ func ConnectByKey(addr, user, keyPath string) (*Connection, error) {
 
 func dial(addr string, config *ssh.ClientConfig) (*Connection, error) {
 	if !strings.Contains(addr, ":") {
-		addr = addr + ":22"
+		addr += ":22"
 	}
 
 	conn, err := ssh.Dial("tcp", addr, config)
@@ -75,7 +76,10 @@ func dial(addr string, config *ssh.ClientConfig) (*Connection, error) {
 // The remote shell is invoked as `name arg1 arg2...` (no shell escaping).
 // For complex commands, use `sh -c "..."` as the name with args.
 func (c *Connection) Run(ctx context.Context, name string, args ...string) (runner.Result, error) {
-	cmd := buildCommand(name, args...)
+	ctx, cancel := runner.WithDefaultTimeout(ctx)
+	defer cancel()
+
+	cmd := strings.Join(append([]string{name}, args...), " ")
 
 	session, err := c.client.NewSession()
 	if err != nil {
@@ -117,30 +121,4 @@ func (c *Connection) Cleanup() {
 		c.client.Close()
 		c.client = nil
 	}
-}
-
-func buildCommand(name string, args ...string) string {
-	if len(args) == 0 {
-		return name
-	}
-
-	parts := make([]string, 0, len(args)+1)
-	parts = append(parts, name)
-	parts = append(parts, args...)
-
-	return strings.Join(parts, " ")
-}
-
-// ResolveKey returns the SSH key for the given path.
-func ResolveKey(explicitKey, user string, host string) (string, error) {
-	if explicitKey != "" {
-		return explicitKey, nil
-	}
-
-	key := PathForHost(user, host)
-	if key == "" {
-		return "", fmt.Errorf("no SSH key found for %s%s", user, host)
-	}
-
-	return key, nil
 }
